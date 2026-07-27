@@ -1,20 +1,22 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useAuth } from '@clerk/react'
-import { fetchChannels, schedulePost } from './api.js'
+import { fetchChannels } from './api.js'
+import Composer from './Composer.jsx'
+import Calendar from './Calendar.jsx'
 
 export default function SocialPage() {
   const { getToken } = useAuth()
   const [channels, setChannels] = useState([])
-  const [selectedChannel, setSelectedChannel] = useState(null)
-  const [content, setContent] = useState('')
+  const [tab, setTab] = useState('compose')
   const [status, setStatus] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
 
   useEffect(function () {
     async function loadChannels() {
-      const token = await getToken()
       try {
+        const token = await getToken()
         const data = await fetchChannels(token)
-        setChannels(data.channels)
+        setChannels(data.channels || [])
       } catch (error) {
         setStatus('Could not load channels')
       }
@@ -22,45 +24,40 @@ export default function SocialPage() {
     loadChannels()
   }, [])
 
-  async function handleSubmit() {
-    if (!selectedChannel) {
-      setStatus('Pick a channel first')
-      return
-    }
-    const token = await getToken()
-    const post = { type: 'now', date: new Date().toISOString(), channelId: selectedChannel.id, platform: selectedChannel.platform, content: content }
-    try {
-      await schedulePost(token, post)
-      setStatus('Post sent to Postiz')
-      setContent('')
-    } catch (error) {
-      setStatus('Failed to send post')
-    }
+  function handleSubmitted() {
+    setRefreshKey(refreshKey + 1)
+    setTab('calendar')
   }
 
   return (
-    <section>
+    <section className="social-page">
       <h1>Social</h1>
-      <h2>Connected channels</h2>
-      {channels.length === 0 ? (
-        <p>No channels yet. Connect one in the Postiz dashboard for now.</p>
+      <p className="social-help">Create posts and manage your publishing calendar.</p>
+
+      <div className="social-tabs">
+        <button
+          type="button"
+          className={tab === 'compose' ? 'tab active' : 'tab'}
+          onClick={function () { setTab('compose') }}
+        >
+          Compose
+        </button>
+        <button
+          type="button"
+          className={tab === 'calendar' ? 'tab active' : 'tab'}
+          onClick={function () { setTab('calendar') }}
+        >
+          Calendar
+        </button>
+      </div>
+
+      {status ? <p className="social-status">{status}</p> : null}
+
+      {tab === 'compose' ? (
+        <Composer channels={channels} getToken={getToken} onSubmitted={handleSubmitted} />
       ) : (
-        <ul>
-          {channels.map(function (channel) {
-            return (
-              <li key={channel.id}>
-                <button type="button" onClick={function () { setSelectedChannel(channel) }}>
-                  {channel.name} ({channel.platform}){selectedChannel && selectedChannel.id === channel.id ? ' — selected' : ''}
-                </button>
-              </li>
-            )
-          })}
-        </ul>
+        <Calendar getToken={getToken} refreshKey={refreshKey} />
       )}
-      <h2>Compose</h2>
-      <textarea value={content} onChange={function (event) { setContent(event.target.value) }} rows={4} placeholder="What do you want to post?" />
-      <div><button type="button" onClick={handleSubmit}>Post now</button></div>
-      {status ? <p>{status}</p> : null}
     </section>
   )
 }
