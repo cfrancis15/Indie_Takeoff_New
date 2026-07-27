@@ -1,8 +1,5 @@
+import SocialPage from '../features/social/SocialPage.jsx'
+
 export default function Social() {
-  return (
-    <section>
-      <h1>Social</h1>
-      <p>Coming soon.</p>
-    </section>
-  )
+  return <SocialPage />
 }
