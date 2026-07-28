@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { generateCaption, schedulePost, uploadImage } from './api.js'
+import { useEffect, useState } from 'react'
+import { fetchArticleOptions, generateCaption, schedulePost, uploadImage } from './api.js'
 import { toDateTimeLocalValue } from './dateUtils.js'
 import {
   MAX_IMAGE_ITEMS,
@@ -19,8 +19,13 @@ export default function Composer(props) {
   const [postType, setPostType] = useState('now')
   const [scheduleAt, setScheduleAt] = useState(toDateTimeLocalValue(new Date(Date.now() + 60 * 60 * 1000)))
   const [images, setImages] = useState([])
-  const [redditSubreddit, setRedditSubreddit] = useState('')
-  const [redditTitle, setRedditTitle] = useState('')
+  const [articleTitle, setArticleTitle] = useState('')
+  const [articleSubtitle, setArticleSubtitle] = useState('')
+  const [articleTags, setArticleTags] = useState('')
+  const [articleCanonical, setArticleCanonical] = useState('')
+  const [hashnodePublication, setHashnodePublication] = useState('')
+  const [hashnodePublications, setHashnodePublications] = useState([])
+  const [hashnodeTagOptions, setHashnodeTagOptions] = useState([])
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -59,17 +64,53 @@ export default function Composer(props) {
     return picked
   }
 
-  function selectionIncludesReddit() {
+  function selectionHasPlatform(platformId) {
     const picked = selectedChannels()
     let index = 0
     while (index < picked.length) {
-      if (picked[index].platform === 'reddit') {
+      if (picked[index].platform === platformId) {
         return true
       }
       index = index + 1
     }
     return false
   }
+
+  function firstChannelForPlatform(platformId) {
+    const picked = selectedChannels()
+    let index = 0
+    while (index < picked.length) {
+      if (picked[index].platform === platformId) {
+        return picked[index]
+      }
+      index = index + 1
+    }
+    return null
+  }
+
+  useEffect(function () {
+    async function loadHashnodeOptions() {
+      const channel = firstChannelForPlatform('hashnode')
+      if (!channel) {
+        setHashnodePublications([])
+        setHashnodeTagOptions([])
+        return
+      }
+      try {
+        const token = await getToken()
+        const data = await fetchArticleOptions(token, channel.id, 'hashnode')
+        setHashnodePublications(data.publications || [])
+        setHashnodeTagOptions(data.tags || [])
+        if (!hashnodePublication && data.publications && data.publications[0]) {
+          setHashnodePublication(data.publications[0].id)
+        }
+      } catch (error) {
+        setHashnodePublications([])
+        setHashnodeTagOptions([])
+      }
+    }
+    loadHashnodeOptions()
+  }, [selectedIds, channels])
 
   function removeImage(imageId) {
     const next = []
@@ -178,16 +219,24 @@ export default function Composer(props) {
         return
       }
     }
-    if (selectionIncludesReddit()) {
-      const sub = redditSubreddit.replace(/^r\//i, '').trim()
-      if (sub.length < 2) {
-        setStatus('Reddit needs a subreddit (without r/)')
-        return
-      }
-      if (redditTitle.trim().length < 2) {
-        setStatus('Reddit needs a post title')
-        return
-      }
+
+    const needsDevto = selectionHasPlatform('devto')
+    const needsHashnode = selectionHasPlatform('hashnode')
+    if (needsDevto && articleTitle.trim().length < 2) {
+      setStatus('Dev.to needs an article title')
+      return
+    }
+    if (needsHashnode && articleTitle.trim().length < 6) {
+      setStatus('Hashnode title must be at least 6 characters')
+      return
+    }
+    if (needsHashnode && !hashnodePublication.trim()) {
+      setStatus('Hashnode needs a publication ID')
+      return
+    }
+    if (needsHashnode && articleTags.trim().length < 1) {
+      setStatus('Hashnode needs at least one tag')
+      return
     }
 
     setBusy(true)
@@ -214,8 +263,12 @@ export default function Composer(props) {
       content: content,
       channels: channelPayload,
       images: imagePayload,
-      redditSubreddit: redditSubreddit,
-      redditTitle: redditTitle
+      articleTitle: articleTitle,
+      articleSubtitle: articleSubtitle,
+      articleTags: articleTags,
+      articleCanonical: articleCanonical,
+      hashnodePublication: hashnodePublication,
+      hashnodeTagOptions: hashnodeTagOptions
     }
 
     try {
@@ -241,14 +294,19 @@ export default function Composer(props) {
     setBusy(false)
   }
 
+  const showArticleFields = selectionHasPlatform('devto') || selectionHasPlatform('hashnode')
+  const showHashnodeFields = selectionHasPlatform('hashnode')
+
   return (
     <section className="social-panel">
       <h2>Compose</h2>
-      <p className="social-help">Choose Bluesky, LinkedIn, and/or Reddit, add text and optional images, then post or schedule.</p>
+      <p className="social-help">
+        Choose Bluesky, LinkedIn, Dev.to, and/or Hashnode. Blog posts use Markdown in the content box.
+      </p>
 
       <h3>Channels</h3>
       {channels.length === 0 ? (
-        <p>No channels yet. Connect Bluesky, LinkedIn, or Reddit under the Channels tab.</p>
+        <p>No channels yet. Connect platforms under the Channels tab.</p>
       ) : (
         <ul className="channel-list">
           {channels.map(function (channel) {
@@ -270,29 +328,84 @@ export default function Composer(props) {
         </ul>
       )}
 
-      {selectionIncludesReddit() ? (
-        <div className="reddit-fields">
-          <h3>Reddit</h3>
-          <p className="social-help">Required when Reddit is selected. Subreddit without the r/ prefix.</p>
+      {showArticleFields ? (
+        <div className="article-fields">
+          <h3>Article details</h3>
+          <p className="social-help">Required for Dev.to / Hashnode. Content below is the Markdown body.</p>
           <div className="schedule-field">
-            <label htmlFor="redditSubreddit">Subreddit</label>
+            <label htmlFor="articleTitle">Title</label>
             <input
-              id="redditSubreddit"
+              id="articleTitle"
               type="text"
-              value={redditSubreddit}
-              onChange={function (event) { setRedditSubreddit(event.target.value) }}
-              placeholder="e.g. sideproject"
+              value={articleTitle}
+              onChange={function (event) { setArticleTitle(event.target.value) }}
+              placeholder="Article title"
               disabled={busy}
             />
           </div>
+          {showHashnodeFields ? (
+            <div className="schedule-field">
+              <label htmlFor="articleSubtitle">Subtitle (optional)</label>
+              <input
+                id="articleSubtitle"
+                type="text"
+                value={articleSubtitle}
+                onChange={function (event) { setArticleSubtitle(event.target.value) }}
+                placeholder="Short subtitle"
+                disabled={busy}
+              />
+            </div>
+          ) : null}
           <div className="schedule-field">
-            <label htmlFor="redditTitle">Title</label>
+            <label htmlFor="articleTags">Tags (comma-separated)</label>
             <input
-              id="redditTitle"
+              id="articleTags"
               type="text"
-              value={redditTitle}
-              onChange={function (event) { setRedditTitle(event.target.value) }}
-              placeholder="Post title"
+              value={articleTags}
+              onChange={function (event) { setArticleTags(event.target.value) }}
+              placeholder={showHashnodeFields ? 'e.g. javascript, webdev' : 'up to 4 tags, e.g. javascript, webdev'}
+              disabled={busy}
+            />
+          </div>
+          {showHashnodeFields ? (
+            <div className="schedule-field">
+              <label htmlFor="hashnodePublication">Hashnode publication</label>
+              {hashnodePublications.length > 0 ? (
+                <select
+                  id="hashnodePublication"
+                  value={hashnodePublication}
+                  onChange={function (event) { setHashnodePublication(event.target.value) }}
+                  disabled={busy}
+                >
+                  <option value="">Select publication</option>
+                  {hashnodePublications.map(function (pub) {
+                    return (
+                      <option key={pub.id} value={pub.id}>
+                        {pub.name}
+                      </option>
+                    )
+                  })}
+                </select>
+              ) : (
+                <input
+                  id="hashnodePublication"
+                  type="text"
+                  value={hashnodePublication}
+                  onChange={function (event) { setHashnodePublication(event.target.value) }}
+                  placeholder="Publication ID from Hashnode"
+                  disabled={busy}
+                />
+              )}
+            </div>
+          ) : null}
+          <div className="schedule-field">
+            <label htmlFor="articleCanonical">Canonical URL (optional)</label>
+            <input
+              id="articleCanonical"
+              type="url"
+              value={articleCanonical}
+              onChange={function (event) { setArticleCanonical(event.target.value) }}
+              placeholder="https://…"
               disabled={busy}
             />
           </div>
@@ -343,12 +456,15 @@ export default function Composer(props) {
         value={content}
         onChange={function (event) { setContent(event.target.value) }}
         rows={6}
-        placeholder="What do you want to post?"
+        placeholder={showArticleFields ? 'Markdown article body…' : 'What do you want to post?'}
       />
       <p className="char-count">{content.length} characters</p>
 
       <h3>Images</h3>
-      <p className="social-help">Up to {MAX_IMAGE_ITEMS} images, 10 MB each. JPG, PNG, GIF, or WebP.</p>
+      <p className="social-help">
+        Up to {MAX_IMAGE_ITEMS} images, 10 MB each. JPG, PNG, GIF, or WebP.
+        {showArticleFields ? ' First image is used as the article cover when posting to Dev.to/Hashnode.' : ''}
+      </p>
       <input
         type="file"
         accept={acceptAttribute()}

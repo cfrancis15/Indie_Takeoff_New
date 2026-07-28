@@ -6,10 +6,23 @@ export const CONNECTABLE_PROVIDERS = [
     hint: 'Use your Bluesky handle and an app password (not your main password).'
   },
   { id: 'linkedin', name: 'LinkedIn', mode: 'oauth' },
-  { id: 'reddit', name: 'Reddit', mode: 'oauth' }
+  {
+    id: 'devto',
+    name: 'Dev.to',
+    mode: 'api_key',
+    hint: 'Paste a Dev.to API key from Settings → Extensions → DEV Community API Keys.'
+  },
+  {
+    id: 'hashnode',
+    name: 'Hashnode',
+    mode: 'api_key',
+    hint: 'Paste a Hashnode Personal Access Token. API publishing requires a Hashnode Pro publication (free-tier tokens will not work).'
+  }
 ]
 
-export const MVP_PLATFORM_IDS = ['bluesky', 'linkedin', 'reddit']
+export const MVP_PLATFORM_IDS = ['bluesky', 'linkedin', 'devto', 'hashnode']
+
+export const ARTICLE_PLATFORM_IDS = ['devto', 'hashnode']
 
 export function findProvider(providerId) {
   let index = 0
@@ -26,6 +39,17 @@ export function isMvpPlatform(platformId) {
   let index = 0
   while (index < MVP_PLATFORM_IDS.length) {
     if (MVP_PLATFORM_IDS[index] === platformId) {
+      return true
+    }
+    index = index + 1
+  }
+  return false
+}
+
+export function isArticlePlatform(platformId) {
+  let index = 0
+  while (index < ARTICLE_PLATFORM_IDS.length) {
+    if (ARTICLE_PLATFORM_IDS[index] === platformId) {
       return true
     }
     index = index + 1

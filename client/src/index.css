@@ -219,6 +219,7 @@ body {
   color: #8a1f1f;
 }
 
+.credential-connect-form,
 .bluesky-connect-form {
   margin-top: 1rem;
   padding-top: 1rem;
@@ -226,6 +227,7 @@ body {
   max-width: 28rem;
 }
 
+.credential-field,
 .bluesky-field {
   display: flex;
   flex-direction: column;
@@ -233,12 +235,15 @@ body {
   margin: 0.75rem 0;
 }
 
+.credential-field span,
 .bluesky-field span {
   font-size: 0.9rem;
   color: #333333;
 }
 
-.bluesky-field input {
+.credential-field input,
+.bluesky-field input,
+.article-fields select {
   padding: 0.55rem 0.65rem;
   border: 1px solid #cccccc;
   border-radius: 4px;
@@ -246,11 +251,18 @@ body {
   background: #ffffff;
 }
 
+.credential-actions,
 .bluesky-actions {
   display: flex;
   gap: 0.75rem;
   align-items: center;
   margin-top: 0.5rem;
+}
+
+.article-fields {
+  margin: 1rem 0 1.25rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid #e5e5e5;
 }
 
 .channels-cancel {

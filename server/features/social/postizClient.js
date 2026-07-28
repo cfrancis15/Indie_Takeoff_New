@@ -108,29 +108,44 @@ export async function connectBlueskyCredentials(input) {
     throw new Error('Bluesky app password is required')
   }
 
-  const start = await getConnectUrl('bluesky')
+  return connectCustomFieldsProvider('bluesky', {
+    service: service,
+    identifier: identifier,
+    password: password
+  }, timezone)
+}
+
+export async function connectApiKeyProvider(providerId, apiKey, timezone) {
+  const key = String(apiKey || '').trim()
+  if (!key) {
+    throw new Error('API key is required')
+  }
+  if (providerId !== 'devto' && providerId !== 'hashnode') {
+    throw new Error('Unsupported API key provider')
+  }
+  return connectCustomFieldsProvider(providerId, { apiKey: key }, timezone)
+}
+
+async function connectCustomFieldsProvider(providerId, fields, timezone) {
+  const start = await getConnectUrl(providerId)
   const state = start && start.url ? String(start.url) : ''
   if (!state) {
-    throw new Error('Postiz did not return a Bluesky connect state')
+    throw new Error('Postiz did not return a connect state for ' + providerId)
   }
 
-  const code = Buffer.from(
-    JSON.stringify({
-      service: service,
-      identifier: identifier,
-      password: password
-    })
-  ).toString('base64')
-
-  const response = await fetch(postizApiRoot() + '/integrations/social-connect/bluesky', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      code: code,
-      state: state,
-      timezone: timezone
-    })
-  })
+  const code = Buffer.from(JSON.stringify(fields)).toString('base64')
+  const response = await fetch(
+    postizApiRoot() + '/integrations/social-connect/' + encodeURIComponent(providerId),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        code: code,
+        state: state,
+        timezone: String(timezone != null ? timezone : '0')
+      })
+    }
+  )
 
   let data = null
   try {
@@ -140,7 +155,7 @@ export async function connectBlueskyCredentials(input) {
   }
 
   if (!response.ok) {
-    let message = 'Bluesky connect failed (' + response.status + ')'
+    let message = providerId + ' connect failed (' + response.status + ')'
     if (data) {
       if (typeof data.msg === 'string' && data.msg) {
         message = data.msg
@@ -160,4 +175,19 @@ export async function connectBlueskyCredentials(input) {
   }
 
   return data
+}
+
+export async function triggerIntegrationTool(integrationId, methodName, data) {
+  const response = await fetch(BASE_URL + '/integration-trigger/' + encodeURIComponent(integrationId), {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify({
+      methodName: methodName,
+      data: data || {}
+    })
+  })
+  if (!response.ok) {
+    throw new Error('Postiz tool request failed: ' + response.status)
+  }
+  return response.json()
 }

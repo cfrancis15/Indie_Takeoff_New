@@ -9,11 +9,19 @@ import {
   uploadFile,
   getConnectUrl,
   deleteIntegration,
-  connectBlueskyCredentials
+  connectBlueskyCredentials,
+  connectApiKeyProvider,
+  triggerIntegrationTool
 } from './postizClient.js'
 import { resolvePostizCustomer } from './tenant.js'
 import { generateCaption, isCaptionAssistConfigured } from './captionAssist.js'
-import { CONNECTABLE_PROVIDERS, findProvider, getPostizAppUrl, isMvpPlatform } from './providers.js'
+import {
+  CONNECTABLE_PROVIDERS,
+  findProvider,
+  getPostizAppUrl,
+  isMvpPlatform,
+  isArticlePlatform
+} from './providers.js'
 import {
   ALLOWED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
@@ -74,31 +82,97 @@ function normalizeImages(images) {
   return cleaned
 }
 
+function parseArticleTags(raw) {
+  const text = String(raw || '')
+  const parts = text.split(',')
+  const tags = []
+  let index = 0
+  while (index < parts.length) {
+    const label = parts[index].trim()
+    if (label) {
+      tags.push({ value: label, label: label })
+    }
+    index = index + 1
+  }
+  return tags
+}
+
+function mapHashnodeTags(rawTags, availableTags) {
+  const tags = []
+  let index = 0
+  while (index < rawTags.length) {
+    const wanted = String(rawTags[index].label || rawTags[index].value || '').toLowerCase()
+    let matched = null
+    let availIndex = 0
+    while (availIndex < availableTags.length) {
+      const option = availableTags[availIndex]
+      const label = String(option.label || option.name || '').toLowerCase()
+      const value = String(option.value || option.id || option.objectID || '')
+      if (label === wanted || value.toLowerCase() === wanted) {
+        matched = {
+          value: value || String(option.value || option.id || option.objectID),
+          label: option.label || option.name || rawTags[index].label
+        }
+        break
+      }
+      availIndex = availIndex + 1
+    }
+    if (matched) {
+      tags.push(matched)
+    } else {
+      tags.push(rawTags[index])
+    }
+    index = index + 1
+  }
+  return tags
+}
+
 function buildChannelSettings(channel, body, images) {
   const platform = channel.platform
 
-  if (platform === 'reddit') {
-    const subreddit = String(body.redditSubreddit || '')
-      .replace(/^r\//i, '')
-      .trim()
-    const title = String(body.redditTitle || '').trim()
-    let postKind = 'self'
+  if (platform === 'devto') {
+    const title = String(body.articleTitle || '').trim()
+    const tags = parseArticleTags(body.articleTags)
+    const settings = {
+      __type: 'devto',
+      title: title,
+      tags: tags
+    }
+    const canonical = String(body.articleCanonical || '').trim()
+    if (canonical) {
+      settings.canonical = canonical
+    }
     if (images.length > 0) {
-      postKind = 'image'
+      settings.main_image = { id: images[0].id, path: images[0].path }
     }
-    return {
-      __type: 'reddit',
-      subreddit: [{
-        value: {
-          subreddit: subreddit,
-          title: title,
-          type: postKind,
-          url: '',
-          is_flair_required: false,
-          flair: null
-        }
-      }]
+    return settings
+  }
+
+  if (platform === 'hashnode') {
+    const title = String(body.articleTitle || '').trim()
+    const publication = String(body.hashnodePublication || '').trim()
+    const subtitle = String(body.articleSubtitle || '').trim()
+    let tags = parseArticleTags(body.articleTags)
+    if (Array.isArray(body.hashnodeTagOptions) && body.hashnodeTagOptions.length > 0) {
+      tags = mapHashnodeTags(tags, body.hashnodeTagOptions)
     }
+    const settings = {
+      __type: 'hashnode',
+      title: title,
+      publication: publication,
+      tags: tags
+    }
+    if (subtitle) {
+      settings.subtitle = subtitle
+    }
+    const canonical = String(body.articleCanonical || '').trim()
+    if (canonical) {
+      settings.canonical = canonical
+    }
+    if (images.length > 0) {
+      settings.main_image = { id: images[0].id, path: images[0].path }
+    }
+    return settings
   }
 
   return { __type: platform }
@@ -124,28 +198,46 @@ function buildPostEntries(body) {
   })
 }
 
-function validateRedditFields(body, channels) {
+function validateArticleFields(body, channels) {
+  let needsDevto = false
+  let needsHashnode = false
   let index = 0
-  let needsReddit = false
   while (index < channels.length) {
-    if (channels[index].platform === 'reddit') {
-      needsReddit = true
-      break
+    if (channels[index].platform === 'devto') {
+      needsDevto = true
+    }
+    if (channels[index].platform === 'hashnode') {
+      needsHashnode = true
     }
     index = index + 1
   }
-  if (!needsReddit) {
+
+  if (!needsDevto && !needsHashnode) {
     return null
   }
-  const subreddit = String(body.redditSubreddit || '')
-    .replace(/^r\//i, '')
-    .trim()
-  const title = String(body.redditTitle || '').trim()
-  if (subreddit.length < 2) {
-    return 'Reddit posts need a subreddit name (without r/)'
+
+  const title = String(body.articleTitle || '').trim()
+  if (needsDevto && title.length < 2) {
+    return 'Dev.to posts need an article title'
   }
-  if (title.length < 2) {
-    return 'Reddit posts need a title'
+  if (needsHashnode && title.length < 6) {
+    return 'Hashnode titles must be at least 6 characters'
+  }
+  if (needsHashnode) {
+    const publication = String(body.hashnodePublication || '').trim()
+    if (!publication) {
+      return 'Hashnode needs a publication ID'
+    }
+    const tags = parseArticleTags(body.articleTags)
+    if (tags.length < 1) {
+      return 'Hashnode needs at least one tag'
+    }
+  }
+  if (needsDevto) {
+    const tags = parseArticleTags(body.articleTags)
+    if (tags.length > 4) {
+      return 'Dev.to allows at most 4 tags'
+    }
   }
   return null
 }
@@ -230,6 +322,51 @@ router.post('/connect/bluesky', async function (req, res) {
   }
 })
 
+router.post('/connect/api-key/:provider', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+
+  const providerId = String(req.params.provider || '')
+  const provider = findProvider(providerId)
+  if (!provider || provider.mode !== 'api_key') {
+    return res.status(400).json({ error: 'Unknown API key provider' })
+  }
+
+  const body = req.body || {}
+  const apiKey = String(body.apiKey || '').trim()
+  const timezone = body.timezone != null ? String(body.timezone) : String(-(new Date().getTimezoneOffset()))
+
+  if (!apiKey) {
+    return res.status(400).json({ error: provider.name + ' API key is required' })
+  }
+
+  try {
+    const result = await connectApiKeyProvider(providerId, apiKey, timezone)
+    res.json({
+      mode: 'api_key',
+      provider: providerId,
+      channel: result
+    })
+  } catch (error) {
+    const message = error && error.message ? error.message : 'Could not connect ' + provider.name
+    const lower = message.toLowerCase()
+    if (lower.indexOf('invalid credentials') !== -1) {
+      if (providerId === 'hashnode') {
+        return res.status(400).json({
+          error:
+            'Hashnode could not validate this key. Publishing via API requires a Hashnode Pro publication — free-tier PATs will not work. Check Billing → Upgrade to Pro, or regenerate your token.'
+        })
+      }
+      return res.status(400).json({ error: 'Invalid ' + provider.name + ' API key' })
+    }
+    if (lower.indexOf('organization not found') !== -1) {
+      return res.status(502).json({ error: 'Postiz connect state expired. Try again.' })
+    }
+    res.status(502).json({ error: message })
+  }
+})
+
 router.get('/connect/:provider', async function (req, res) {
   if (!requireUser(req, res)) {
     return
@@ -240,10 +377,10 @@ router.get('/connect/:provider', async function (req, res) {
     return res.status(400).json({ error: 'Unknown provider' })
   }
 
-  if (provider.mode === 'credentials') {
+  if (provider.mode === 'credentials' || provider.mode === 'api_key') {
     return res.status(400).json({
-      error: 'Use the Bluesky form to connect with handle and app password.',
-      mode: 'credentials',
+      error: 'Use the in-app form to connect ' + provider.name + '.',
+      mode: provider.mode,
       provider: provider.id
     })
   }
@@ -272,6 +409,84 @@ router.get('/connect/:provider', async function (req, res) {
     res.status(502).json({
       error: 'Could not start connect for ' + provider.name + '. OAuth apps may not be configured in Postiz yet.'
     })
+  }
+})
+
+router.get('/channels/:id/article-options', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+
+  const channelId = String(req.params.id || '')
+  const platform = String(req.query.platform || '')
+
+  if (!isArticlePlatform(platform)) {
+    return res.status(400).json({ error: 'Not an article platform' })
+  }
+
+  try {
+    const publications = []
+    const tags = []
+
+    if (platform === 'hashnode') {
+      try {
+        const pubs = await triggerIntegrationTool(channelId, 'publications', {})
+        const list = pubs && pubs.output ? pubs.output : pubs
+        if (Array.isArray(list)) {
+          let index = 0
+          while (index < list.length) {
+            publications.push({
+              id: String(list[index].id || ''),
+              name: String(list[index].name || list[index].title || list[index].id || '')
+            })
+            index = index + 1
+          }
+        }
+      } catch (error) {
+        // publication list optional — user can paste ID
+      }
+
+      try {
+        const tagResult = await triggerIntegrationTool(channelId, 'tagsList', {})
+        const list = tagResult && tagResult.output ? tagResult.output : tagResult
+        if (Array.isArray(list)) {
+          let index = 0
+          while (index < list.length && index < 200) {
+            const item = list[index]
+            tags.push({
+              value: String(item.objectID || item.value || item.id || ''),
+              label: String(item.name || item.label || '')
+            })
+            index = index + 1
+          }
+        }
+      } catch (error) {
+        // tags optional
+      }
+    }
+
+    if (platform === 'devto') {
+      try {
+        const tagResult = await triggerIntegrationTool(channelId, 'tags', {})
+        const list = tagResult && tagResult.output ? tagResult.output : tagResult
+        if (Array.isArray(list)) {
+          let index = 0
+          while (index < list.length && index < 200) {
+            tags.push({
+              value: String(list[index].value || list[index].id || list[index].name || ''),
+              label: String(list[index].label || list[index].name || '')
+            })
+            index = index + 1
+          }
+        }
+      } catch (error) {
+        // tags optional
+      }
+    }
+
+    res.json({ publications: publications, tags: tags })
+  } catch (error) {
+    res.status(502).json({ error: 'Could not load article options' })
   }
 })
 
@@ -370,9 +585,9 @@ router.post('/posts', async function (req, res) {
   } else if (body.channelId) {
     requestChannels = [{ id: body.channelId, platform: body.platform }]
   }
-  const redditError = validateRedditFields(body, requestChannels)
-  if (redditError) {
-    return res.status(400).json({ error: redditError })
+  const articleError = validateArticleFields(body, requestChannels)
+  if (articleError) {
+    return res.status(400).json({ error: articleError })
   }
 
   const hasContent = body.content && String(body.content).trim()

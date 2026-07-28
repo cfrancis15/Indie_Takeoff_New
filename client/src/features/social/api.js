@@ -59,6 +59,30 @@ export async function connectBluesky(token, input) {
   return response.json()
 }
 
+export async function connectApiKeyProvider(token, providerId, input) {
+  const response = await fetch(API_BASE + '/connect/api-key/' + encodeURIComponent(providerId), {
+    method: 'POST',
+    headers: authJsonHeaders(token),
+    body: JSON.stringify(input)
+  })
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to connect channel'))
+  }
+  return response.json()
+}
+
+export async function fetchArticleOptions(token, channelId, platform) {
+  const query = '?platform=' + encodeURIComponent(platform)
+  const response = await fetch(
+    API_BASE + '/channels/' + encodeURIComponent(channelId) + '/article-options' + query,
+    { headers: authHeaders(token) }
+  )
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to load article options'))
+  }
+  return response.json()
+}
+
 export async function disconnectChannel(token, channelId) {
   const response = await fetch(API_BASE + '/channels/' + encodeURIComponent(channelId), {
     method: 'DELETE',
