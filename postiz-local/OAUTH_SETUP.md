@@ -1,13 +1,13 @@
 # OAuth / API key setup for MVP channels (Postiz Docker)
 
-MVP: **Bluesky**, **LinkedIn**, **Dev.to**, **Hashnode**
+MVP: **Bluesky**, **LinkedIn**, **Mastodon**, **Dev.to**, **Hashnode**
 
 Secrets live in `postiz-local/.env` (gitignored). Compose reads them automatically.
 
 ```powershell
 cd postiz-local
 copy .env.example .env
-# edit .env with LinkedIn keys (blog platforms use per-user API keys in Indie Takeoff)
+# edit .env with LinkedIn + Mastodon keys (blog platforms use per-user API keys in Indie Takeoff)
 docker compose up -d
 ```
 
@@ -51,7 +51,36 @@ Compose applies a startup patch so personal LinkedIn OAuth works. LinkedIn **Pag
 
 ---
 
-## 3. Dev.to (API key — no Docker env)
+## 3. Mastodon
+
+Docs: https://docs.postiz.com/providers/mastodon
+
+Mastodon has no web UI for creating OAuth apps — register via API on the instance you use (default `mastodon.social`):
+
+```powershell
+curl.exe -X POST -sS "https://mastodon.social/api/v1/apps" `
+  -F "client_name=IndieTakeoffLocal" `
+  -F "redirect_uris=http://localhost:5000/integrations/social/mastodon" `
+  -F "scopes=write:statuses write:media profile"
+```
+
+Put the returned values in `postiz-local/.env`:
+
+```env
+MASTODON_CLIENT_ID=...
+MASTODON_CLIENT_SECRET=...
+MASTODON_URL=https://mastodon.social
+```
+
+Then `docker compose up -d --force-recreate postiz`.
+
+Connect in Indie Takeoff → Channels → Mastodon (OAuth popup).
+
+To use a different instance, change `MASTODON_URL` and register the app on that instance instead.
+
+---
+
+## 4. Dev.to (API key — no Docker env)
 
 1. Dev.to → Settings → Extensions → **DEV Community API Keys** → generate.
 2. Indie Takeoff → Channels → Connect Dev.to → paste key.
@@ -60,7 +89,7 @@ Compose needs an **article title**; tags optional (max 4). Content is Markdown.
 
 ---
 
-## 4. Hashnode (API key — no Docker env)
+## 5. Hashnode (API key — no Docker env)
 
 **Requires Hashnode Pro** on the publication for GraphQL API access (reads/writes). Free-tier PATs can be created but will fail connect/publish.
 
@@ -78,6 +107,7 @@ Content is Markdown. First attached image is used as cover when present.
 - [ ] `postiz-local/.env` exists (from `.env.example`) — never committed
 - [ ] Bluesky via Indie Takeoff
 - [ ] LinkedIn keys + redirect URI
+- [ ] Mastodon keys + `MASTODON_URL` + recreate Postiz
 - [ ] Dev.to API key connected in Channels
 - [ ] Hashnode token connected in Channels
 - [ ] `docker compose up -d` in `postiz-local`

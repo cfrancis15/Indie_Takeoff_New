@@ -164,7 +164,7 @@ export default function Channels(props) {
         </button>
       </div>
       <p className="social-help">
-        MVP: Bluesky, LinkedIn, Dev.to, and Hashnode. Blog platforms connect with an API key.
+        MVP: Bluesky, LinkedIn, Mastodon, Dev.to, and Hashnode. Blog platforms connect with an API key.
       </p>
 
       {status ? <p className="social-status">{status}</p> : null}

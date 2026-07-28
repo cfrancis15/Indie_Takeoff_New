@@ -17,10 +17,16 @@ export const CONNECTABLE_PROVIDERS = [
     name: 'Hashnode',
     mode: 'api_key',
     hint: 'Paste a Hashnode Personal Access Token. API publishing requires a Hashnode Pro publication (free-tier tokens will not work).'
+  },
+  {
+    id: 'mastodon',
+    name: 'Mastodon',
+    mode: 'oauth',
+    hint: 'Connects to the Mastodon instance configured in Postiz (default: mastodon.social).'
   }
 ]
 
-export const MVP_PLATFORM_IDS = ['bluesky', 'linkedin', 'devto', 'hashnode']
+export const MVP_PLATFORM_IDS = ['bluesky', 'linkedin', 'devto', 'hashnode', 'mastodon']
 
 export const ARTICLE_PLATFORM_IDS = ['devto', 'hashnode']
 

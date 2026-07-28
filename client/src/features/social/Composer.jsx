@@ -301,7 +301,7 @@ export default function Composer(props) {
     <section className="social-panel">
       <h2>Compose</h2>
       <p className="social-help">
-        Choose Bluesky, LinkedIn, Dev.to, and/or Hashnode. Blog posts use Markdown in the content box.
+        Choose Bluesky, LinkedIn, Mastodon, Dev.to, and/or Hashnode. Blog posts use Markdown in the content box.
       </p>
 
       <h3>Channels</h3>
