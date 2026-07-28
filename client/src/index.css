@@ -160,3 +160,103 @@ body {
   background: #ffffff;
   font: inherit;
 }
+
+.channels-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.channels-header h2 { margin-bottom: 0; }
+
+.channels-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1.5rem;
+}
+
+.channels-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid #e5e5e5;
+}
+
+.channels-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
+.channels-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #e5e5e5;
+  flex-shrink: 0;
+}
+
+.channels-avatar.placeholder { display: inline-block; }
+
+.channels-platform,
+.channels-hint {
+  font-size: 0.85rem;
+  color: #666666;
+}
+
+.channels-empty,
+.channels-footer {
+  color: #555555;
+  font-size: 0.9rem;
+}
+
+.channels-disconnect {
+  color: #8a1f1f;
+}
+
+.bluesky-connect-form {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e5e5;
+  max-width: 28rem;
+}
+
+.bluesky-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.75rem 0;
+}
+
+.bluesky-field span {
+  font-size: 0.9rem;
+  color: #333333;
+}
+
+.bluesky-field input {
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #cccccc;
+  border-radius: 4px;
+  font: inherit;
+  background: #ffffff;
+}
+
+.bluesky-actions {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.channels-cancel {
+  background: transparent;
+  border: none;
+  color: #555555;
+  cursor: pointer;
+  font: inherit;
+}

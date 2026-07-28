@@ -11,6 +11,11 @@ function authOnlyHeaders() {
   return { Authorization: API_KEY }
 }
 
+function postizApiRoot() {
+  const base = String(BASE_URL || '').replace(/\/$/, '')
+  return base.replace(/\/public\/v1\/?$/, '') || 'http://localhost:5000/api'
+}
+
 export async function listIntegrations() {
   const response = await fetch(BASE_URL + '/integrations', { method: 'GET', headers: authHeaders() })
   if (!response.ok) {
@@ -65,4 +70,94 @@ export async function uploadFile(fileBuffer, fileName, mimeType) {
     throw new Error('Postiz upload failed: ' + response.status)
   }
   return response.json()
+}
+
+export async function getConnectUrl(providerId, refreshId) {
+  let path = BASE_URL + '/social/' + encodeURIComponent(providerId)
+  if (refreshId) {
+    path = path + '?refresh=' + encodeURIComponent(refreshId)
+  }
+  const response = await fetch(path, { method: 'GET', headers: authHeaders() })
+  if (!response.ok) {
+    throw new Error('Postiz connect URL request failed: ' + response.status)
+  }
+  return response.json()
+}
+
+export async function deleteIntegration(integrationId) {
+  const response = await fetch(BASE_URL + '/integrations/' + encodeURIComponent(integrationId), {
+    method: 'DELETE',
+    headers: authHeaders()
+  })
+  if (!response.ok) {
+    throw new Error('Postiz delete integration failed: ' + response.status)
+  }
+  return response.json()
+}
+
+export async function connectBlueskyCredentials(input) {
+  const identifier = String(input.identifier || '').trim().replace(/^@/, '')
+  const password = String(input.password || '')
+  const service = String(input.service || 'https://bsky.social').trim() || 'https://bsky.social'
+  const timezone = String(input.timezone != null ? input.timezone : '0')
+
+  if (!identifier) {
+    throw new Error('Bluesky handle is required')
+  }
+  if (!password) {
+    throw new Error('Bluesky app password is required')
+  }
+
+  const start = await getConnectUrl('bluesky')
+  const state = start && start.url ? String(start.url) : ''
+  if (!state) {
+    throw new Error('Postiz did not return a Bluesky connect state')
+  }
+
+  const code = Buffer.from(
+    JSON.stringify({
+      service: service,
+      identifier: identifier,
+      password: password
+    })
+  ).toString('base64')
+
+  const response = await fetch(postizApiRoot() + '/integrations/social-connect/bluesky', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      code: code,
+      state: state,
+      timezone: timezone
+    })
+  })
+
+  let data = null
+  try {
+    data = await response.json()
+  } catch (error) {
+    data = null
+  }
+
+  if (!response.ok) {
+    let message = 'Bluesky connect failed (' + response.status + ')'
+    if (data) {
+      if (typeof data.msg === 'string' && data.msg) {
+        message = data.msg
+      } else if (typeof data.message === 'string' && data.message) {
+        message = data.message
+      } else if (typeof data.error === 'string' && data.error) {
+        message = data.error
+      } else if (Array.isArray(data.message) && data.message[0]) {
+        message = String(data.message[0])
+      }
+    }
+    throw new Error(message)
+  }
+
+  if (data && data.error) {
+    throw new Error(String(data.error))
+  }
+
+  return data
 }

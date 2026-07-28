@@ -3,6 +3,7 @@ import { useAuth } from '@clerk/react'
 import { fetchChannels } from './api.js'
 import Composer from './Composer.jsx'
 import Calendar from './Calendar.jsx'
+import Channels from './Channels.jsx'
 
 export default function SocialPage() {
   const { getToken } = useAuth()
@@ -29,6 +30,11 @@ export default function SocialPage() {
     setTab('calendar')
   }
 
+  function handleChannelsChanged(nextChannels) {
+    setChannels(nextChannels)
+    setStatus('')
+  }
+
   return (
     <section className="social-page">
       <h1>Social</h1>
@@ -49,15 +55,26 @@ export default function SocialPage() {
         >
           Calendar
         </button>
+        <button
+          type="button"
+          className={tab === 'channels' ? 'tab active' : 'tab'}
+          onClick={function () { setTab('channels') }}
+        >
+          Channels
+        </button>
       </div>
 
       {status ? <p className="social-status">{status}</p> : null}
 
       {tab === 'compose' ? (
         <Composer channels={channels} getToken={getToken} onSubmitted={handleSubmitted} />
-      ) : (
+      ) : null}
+      {tab === 'calendar' ? (
         <Calendar getToken={getToken} refreshKey={refreshKey} />
-      )}
+      ) : null}
+      {tab === 'channels' ? (
+        <Channels getToken={getToken} onChannelsChanged={handleChannelsChanged} />
+      ) : null}
     </section>
   )
 }

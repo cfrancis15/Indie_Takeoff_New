@@ -29,6 +29,47 @@ export async function fetchChannels(token) {
   return response.json()
 }
 
+export async function fetchProviders(token) {
+  const response = await fetch(API_BASE + '/providers', { headers: authHeaders(token) })
+  if (!response.ok) {
+    throw new Error('Failed to load providers')
+  }
+  return response.json()
+}
+
+export async function startConnect(token, providerId) {
+  const response = await fetch(API_BASE + '/connect/' + encodeURIComponent(providerId), {
+    headers: authHeaders(token)
+  })
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to start connect'))
+  }
+  return response.json()
+}
+
+export async function connectBluesky(token, input) {
+  const response = await fetch(API_BASE + '/connect/bluesky', {
+    method: 'POST',
+    headers: authJsonHeaders(token),
+    body: JSON.stringify(input)
+  })
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to connect Bluesky'))
+  }
+  return response.json()
+}
+
+export async function disconnectChannel(token, channelId) {
+  const response = await fetch(API_BASE + '/channels/' + encodeURIComponent(channelId), {
+    method: 'DELETE',
+    headers: authHeaders(token)
+  })
+  if (!response.ok) {
+    throw new Error(await readErrorMessage(response, 'Failed to disconnect channel'))
+  }
+  return response.json()
+}
+
 export async function fetchPosts(token, startDate, endDate) {
   const query = '?startDate=' + encodeURIComponent(startDate) + '&endDate=' + encodeURIComponent(endDate)
   const response = await fetch(API_BASE + '/posts' + query, { headers: authHeaders(token) })

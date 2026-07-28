@@ -19,6 +19,8 @@ export default function Composer(props) {
   const [postType, setPostType] = useState('now')
   const [scheduleAt, setScheduleAt] = useState(toDateTimeLocalValue(new Date(Date.now() + 60 * 60 * 1000)))
   const [images, setImages] = useState([])
+  const [redditSubreddit, setRedditSubreddit] = useState('')
+  const [redditTitle, setRedditTitle] = useState('')
   const [status, setStatus] = useState('')
   const [busy, setBusy] = useState(false)
   const [uploading, setUploading] = useState(false)
@@ -55,6 +57,18 @@ export default function Composer(props) {
       index = index + 1
     }
     return picked
+  }
+
+  function selectionIncludesReddit() {
+    const picked = selectedChannels()
+    let index = 0
+    while (index < picked.length) {
+      if (picked[index].platform === 'reddit') {
+        return true
+      }
+      index = index + 1
+    }
+    return false
   }
 
   function removeImage(imageId) {
@@ -164,6 +178,17 @@ export default function Composer(props) {
         return
       }
     }
+    if (selectionIncludesReddit()) {
+      const sub = redditSubreddit.replace(/^r\//i, '').trim()
+      if (sub.length < 2) {
+        setStatus('Reddit needs a subreddit (without r/)')
+        return
+      }
+      if (redditTitle.trim().length < 2) {
+        setStatus('Reddit needs a post title')
+        return
+      }
+    }
 
     setBusy(true)
     setStatus('')
@@ -188,7 +213,9 @@ export default function Composer(props) {
       date: dateValue,
       content: content,
       channels: channelPayload,
-      images: imagePayload
+      images: imagePayload,
+      redditSubreddit: redditSubreddit,
+      redditTitle: redditTitle
     }
 
     try {
@@ -217,11 +244,11 @@ export default function Composer(props) {
   return (
     <section className="social-panel">
       <h2>Compose</h2>
-      <p className="social-help">Choose channels, add text and optional images, then post now or schedule.</p>
+      <p className="social-help">Choose Bluesky, LinkedIn, and/or Reddit, add text and optional images, then post or schedule.</p>
 
       <h3>Channels</h3>
       {channels.length === 0 ? (
-        <p>No channels yet. Connect one in the Postiz dashboard for now.</p>
+        <p>No channels yet. Connect Bluesky, LinkedIn, or Reddit under the Channels tab.</p>
       ) : (
         <ul className="channel-list">
           {channels.map(function (channel) {
@@ -242,6 +269,35 @@ export default function Composer(props) {
           })}
         </ul>
       )}
+
+      {selectionIncludesReddit() ? (
+        <div className="reddit-fields">
+          <h3>Reddit</h3>
+          <p className="social-help">Required when Reddit is selected. Subreddit without the r/ prefix.</p>
+          <div className="schedule-field">
+            <label htmlFor="redditSubreddit">Subreddit</label>
+            <input
+              id="redditSubreddit"
+              type="text"
+              value={redditSubreddit}
+              onChange={function (event) { setRedditSubreddit(event.target.value) }}
+              placeholder="e.g. sideproject"
+              disabled={busy}
+            />
+          </div>
+          <div className="schedule-field">
+            <label htmlFor="redditTitle">Title</label>
+            <input
+              id="redditTitle"
+              type="text"
+              value={redditTitle}
+              onChange={function (event) { setRedditTitle(event.target.value) }}
+              placeholder="Post title"
+              disabled={busy}
+            />
+          </div>
+        </div>
+      ) : null}
 
       <h3>Content</h3>
       <div className="caption-assist">

@@ -1,9 +1,19 @@
 import { Router } from 'express'
 import multer from 'multer'
 import { getAuth } from '@clerk/express'
-import { listIntegrations, createPost, listPosts, deletePost, uploadFile } from './postizClient.js'
+import {
+  listIntegrations,
+  createPost,
+  listPosts,
+  deletePost,
+  uploadFile,
+  getConnectUrl,
+  deleteIntegration,
+  connectBlueskyCredentials
+} from './postizClient.js'
 import { resolvePostizCustomer } from './tenant.js'
 import { generateCaption, isCaptionAssistConfigured } from './captionAssist.js'
+import { CONNECTABLE_PROVIDERS, findProvider, getPostizAppUrl, isMvpPlatform } from './providers.js'
 import {
   ALLOWED_IMAGE_TYPES,
   MAX_IMAGE_BYTES,
@@ -64,6 +74,36 @@ function normalizeImages(images) {
   return cleaned
 }
 
+function buildChannelSettings(channel, body, images) {
+  const platform = channel.platform
+
+  if (platform === 'reddit') {
+    const subreddit = String(body.redditSubreddit || '')
+      .replace(/^r\//i, '')
+      .trim()
+    const title = String(body.redditTitle || '').trim()
+    let postKind = 'self'
+    if (images.length > 0) {
+      postKind = 'image'
+    }
+    return {
+      __type: 'reddit',
+      subreddit: [{
+        value: {
+          subreddit: subreddit,
+          title: title,
+          type: postKind,
+          url: '',
+          is_flair_required: false,
+          flair: null
+        }
+      }]
+    }
+  }
+
+  return { __type: platform }
+}
+
 function buildPostEntries(body) {
   const content = body.content || ''
   const images = normalizeImages(body.images)
@@ -79,9 +119,35 @@ function buildPostEntries(body) {
     return {
       integration: { id: channel.id },
       value: [{ content: content, image: images }],
-      settings: { __type: channel.platform }
+      settings: buildChannelSettings(channel, body, images)
     }
   })
+}
+
+function validateRedditFields(body, channels) {
+  let index = 0
+  let needsReddit = false
+  while (index < channels.length) {
+    if (channels[index].platform === 'reddit') {
+      needsReddit = true
+      break
+    }
+    index = index + 1
+  }
+  if (!needsReddit) {
+    return null
+  }
+  const subreddit = String(body.redditSubreddit || '')
+    .replace(/^r\//i, '')
+    .trim()
+  const title = String(body.redditTitle || '').trim()
+  if (subreddit.length < 2) {
+    return 'Reddit posts need a subreddit name (without r/)'
+  }
+  if (title.length < 2) {
+    return 'Reddit posts need a title'
+  }
+  return null
 }
 
 router.get('/channels', async function (req, res) {
@@ -91,18 +157,133 @@ router.get('/channels', async function (req, res) {
   try {
     const integrations = await listIntegrations()
     const list = Array.isArray(integrations) ? integrations : []
-    const channels = list.map(function (item) {
-      return {
-        id: item.id,
-        name: item.name,
-        platform: item.identifier,
-        picture: item.picture,
-        disabled: item.disabled
-      }
-    })
+    const channels = list
+      .filter(function (item) {
+        return isMvpPlatform(item.identifier)
+      })
+      .map(function (item) {
+        return {
+          id: item.id,
+          name: item.name,
+          platform: item.identifier,
+          picture: item.picture,
+          disabled: item.disabled,
+          profile: item.profile || null
+        }
+      })
     res.json({ channels: channels })
   } catch (error) {
     res.status(502).json({ error: 'Could not reach Postiz' })
+  }
+})
+
+router.get('/providers', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+  res.json({
+    providers: CONNECTABLE_PROVIDERS,
+    postizAppUrl: getPostizAppUrl()
+  })
+})
+
+router.post('/connect/bluesky', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+
+  const body = req.body || {}
+  const identifier = String(body.identifier || '').trim()
+  const password = String(body.password || '')
+  const service = String(body.service || 'https://bsky.social').trim()
+  const timezone = body.timezone != null ? String(body.timezone) : String(-(new Date().getTimezoneOffset()))
+
+  if (!identifier) {
+    return res.status(400).json({ error: 'Bluesky handle is required' })
+  }
+  if (!password) {
+    return res.status(400).json({ error: 'Bluesky app password is required' })
+  }
+
+  try {
+    const result = await connectBlueskyCredentials({
+      identifier: identifier,
+      password: password,
+      service: service || 'https://bsky.social',
+      timezone: timezone
+    })
+    res.json({
+      mode: 'credentials',
+      provider: 'bluesky',
+      channel: result
+    })
+  } catch (error) {
+    const message = error && error.message ? error.message : 'Could not connect Bluesky'
+    const lower = message.toLowerCase()
+    if (lower.indexOf('invalid credentials') !== -1) {
+      return res.status(400).json({ error: 'Invalid Bluesky handle or app password' })
+    }
+    if (lower.indexOf('organization not found') !== -1) {
+      return res.status(502).json({ error: 'Postiz connect state expired. Try again.' })
+    }
+    res.status(502).json({ error: message })
+  }
+})
+
+router.get('/connect/:provider', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+  const providerId = String(req.params.provider || '')
+  const provider = findProvider(providerId)
+  if (!provider) {
+    return res.status(400).json({ error: 'Unknown provider' })
+  }
+
+  if (provider.mode === 'credentials') {
+    return res.status(400).json({
+      error: 'Use the Bluesky form to connect with handle and app password.',
+      mode: 'credentials',
+      provider: provider.id
+    })
+  }
+
+  if (provider.mode === 'external') {
+    return res.json({
+      mode: 'external',
+      provider: provider.id,
+      url: getPostizAppUrl(),
+      hint: provider.hint || 'Connect this channel in the Postiz dashboard.'
+    })
+  }
+
+  try {
+    const refreshId = req.query.refresh ? String(req.query.refresh) : null
+    const data = await getConnectUrl(providerId, refreshId)
+    if (!data || !data.url) {
+      return res.status(502).json({ error: 'Postiz did not return a connect URL' })
+    }
+    res.json({
+      mode: 'oauth',
+      provider: provider.id,
+      url: data.url
+    })
+  } catch (error) {
+    res.status(502).json({
+      error: 'Could not start connect for ' + provider.name + '. OAuth apps may not be configured in Postiz yet.'
+    })
+  }
+})
+
+router.delete('/channels/:id', async function (req, res) {
+  if (!requireUser(req, res)) {
+    return
+  }
+  try {
+    const result = await deleteIntegration(req.params.id)
+    res.json(result)
+  } catch (error) {
+    res.status(502).json({ error: 'Could not disconnect channel in Postiz' })
   }
 })
 
@@ -181,6 +362,17 @@ router.post('/posts', async function (req, res) {
   const postEntries = buildPostEntries(body)
   if (postEntries.length === 0) {
     return res.status(400).json({ error: 'Select at least one channel' })
+  }
+
+  let requestChannels = []
+  if (Array.isArray(body.channels) && body.channels.length > 0) {
+    requestChannels = body.channels
+  } else if (body.channelId) {
+    requestChannels = [{ id: body.channelId, platform: body.platform }]
+  }
+  const redditError = validateRedditFields(body, requestChannels)
+  if (redditError) {
+    return res.status(400).json({ error: redditError })
   }
 
   const hasContent = body.content && String(body.content).trim()

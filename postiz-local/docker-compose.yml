@@ -1,14 +1,30 @@
 services:
   postiz:
-    image: ghcr.io/gitroomhq/postiz-app:v2.11.3
+    image: ghcr.io/gitroomhq/postiz-app:v2.22.1
     container_name: postiz
     restart: always
+    # Applies personal LinkedIn OAuth fix on every start (prompt=consent + trim org scopes).
+    # Survives recreate; safe no-op if already patched. See Postiz issue #1582.
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        for f in \
+          /app/apps/backend/dist/libraries/nestjs-libraries/src/integrations/social/linkedin.provider.js \
+          /app/apps/orchestrator/dist/libraries/nestjs-libraries/src/integrations/social/linkedin.provider.js; do
+          if [ -f "$$f" ]; then
+            sed -i "s/prompt=none/prompt=consent/g" "$$f"
+            sed -i "/'r_basicprofile',/d;/'rw_organization_admin',/d;/'w_organization_social',/d;/'r_organization_social',/d" "$$f"
+          fi
+        done
+        exec docker-entrypoint.sh sh -c "nginx && pnpm run pm2"
     environment:
       MAIN_URL: "http://localhost:5000"
       FRONTEND_URL: "http://localhost:5000"
       NEXT_PUBLIC_BACKEND_URL: "http://localhost:5000/api"
       BACKEND_INTERNAL_URL: "http://localhost:3000"
-      JWT_SECRET: "local-dev-secret-change-me"
+      TEMPORAL_ADDRESS: "temporal:7233"
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me}
       DATABASE_URL: "postgresql://postiz:postiz-password@postiz-postgres:5432/postiz"
       REDIS_URL: "redis://postiz-redis:6379"
       IS_GENERAL: "true"
@@ -17,16 +33,25 @@ services:
       UPLOAD_DIRECTORY: "/uploads"
       NEXT_PUBLIC_UPLOAD_DIRECTORY: "/uploads"
       API_LIMIT: "10000"
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID:-}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET:-}
+      REDDIT_CLIENT_ID: ${REDDIT_CLIENT_ID:-}
+      REDDIT_CLIENT_SECRET: ${REDDIT_CLIENT_SECRET:-}
     ports:
       - "5000:5000"
     volumes:
       - postiz-config:/config/
       - postiz-uploads:/uploads/
+    networks:
+      - postiz-network
+      - temporal-network
     depends_on:
       postiz-postgres:
         condition: service_healthy
       postiz-redis:
         condition: service_healthy
+      temporal:
+        condition: service_started
 
   postiz-postgres:
     image: postgres:17-alpine
@@ -38,6 +63,8 @@ services:
       POSTGRES_DB: postiz
     volumes:
       - postiz-pg:/var/lib/postgresql/data
+    networks:
+      - postiz-network
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postiz"]
       interval: 5s
@@ -50,14 +77,74 @@ services:
     restart: always
     volumes:
       - postiz-redis-data:/data
+    networks:
+      - postiz-network
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 5s
       retries: 10
 
+  temporal-postgresql:
+    image: postgres:16
+    container_name: temporal-postgresql
+    restart: always
+    environment:
+      POSTGRES_USER: temporal
+      POSTGRES_PASSWORD: temporal
+    volumes:
+      - temporal-pg:/var/lib/postgresql/data
+    networks:
+      - temporal-network
+
+  temporal-elasticsearch:
+    image: elasticsearch:7.17.27
+    container_name: temporal-elasticsearch
+    restart: always
+    environment:
+      - discovery.type=single-node
+      - ES_JAVA_OPTS=-Xms256m -Xmx256m
+      - xpack.security.enabled=false
+      - cluster.routing.allocation.disk.threshold_enabled=true
+      - cluster.routing.allocation.disk.watermark.low=512mb
+      - cluster.routing.allocation.disk.watermark.high=256mb
+      - cluster.routing.allocation.disk.watermark.flood_stage=128mb
+    volumes:
+      - temporal-es:/usr/share/elasticsearch/data
+    networks:
+      - temporal-network
+
+  temporal:
+    image: temporalio/auto-setup:1.28.1
+    container_name: temporal
+    restart: always
+    depends_on:
+      - temporal-postgresql
+      - temporal-elasticsearch
+    environment:
+      - DB=postgres12
+      - DB_PORT=5432
+      - POSTGRES_USER=temporal
+      - POSTGRES_PWD=temporal
+      - POSTGRES_SEEDS=temporal-postgresql
+      - ENABLE_ES=true
+      - ES_SEEDS=temporal-elasticsearch
+      - ES_VERSION=v7
+      - TEMPORAL_NAMESPACE=default
+    ports:
+      - "7233:7233"
+    networks:
+      - temporal-network
+
 volumes:
   postiz-config:
   postiz-uploads:
   postiz-pg:
   postiz-redis-data:
+  temporal-pg:
+  temporal-es:
+
+networks:
+  postiz-network:
+  temporal-network:
+    name: temporal-network
